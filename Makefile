@@ -16,6 +16,7 @@ MONGODB_DATA=./data/mongodb/
 NEO4J_DATA=./data/neo4j/
 MONGODB_URL="mongodb://$(mongodb_root_username):$(mongodb_root_password)@localhost:27017/$(mongodb_database)?authSource=admin"
 MONGODB_COLLECTION=$(mongodb_collection)
+NEO4J_URL="bolt://localhost:7687"
 endef
 
 define MONGODB_DEFAULT_ENV
