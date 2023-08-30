@@ -5,6 +5,6 @@ from typing import Dict, List, Set, Tuple
 @dataclass
 class Schema:
     table_id: str
+    path: list[str]
     column_information: Dict[str, bool]
-    nodes: Set[int]
     last_id: int

@@ -18,21 +18,21 @@ def main(threshold: float = 0.5):
         if schema_api.has(rootName):
             schema_api.update_schema(rootName, doc.keys())
         else:
-            schema_api.add_schema(Schema(rootName, {k: True for k in doc.keys()}, set(), 0))
+            schema_api.add_schema(SchemaAPI.new_schema_from_columns(rootName, doc.keys()))
 
         for (k, v) in doc.items():
             if isinstance(v, dict):
                 if schema_api.has(k):
                     schema_api.update_schema(k, v.keys())
                 else:
-                    schema_api.add_schema(Schema(k, {k: True for k in v.keys()}, set(), 0))
+                    schema_api.add_schema(SchemaAPI.new_schema_from_columns(rootName, doc.keys()))
             elif isinstance(v, list):
                 for item in v:
                     if isinstance(item, dict):
                         if schema_api.has(k):
                             schema_api.update_schema(k, item.keys())
                         else:
-                            schema_api.add_schema(Schema(k, {k: True for k in item.keys()}, set(), 0))
+                            schema_api.add_schema(SchemaAPI.new_schema_from_columns(rootName, doc.keys()))
 
 
 if __name__ == '__main__':
