@@ -3,8 +3,13 @@ from typing import Dict, List, Set, Tuple
 
 
 @dataclass
+class Column:
+    name: str
+    is_optional: bool
+    is_relationship: bool
+
+
+@dataclass
 class Schema:
-    table_id: str
-    path: list[str]
-    column_information: Dict[str, bool]
-    last_id: int
+    id: int
+    column_information: Dict[str, Column]
