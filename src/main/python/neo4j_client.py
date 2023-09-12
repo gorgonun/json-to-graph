@@ -15,6 +15,7 @@ class Neo4jClient():
     def write_nodes(self, nodes: list[Node]):
         with self.driver.session() as session:
             for (query, nodes_values) in self.query_generator.generate_create_query(nodes):
+                print(query, nodes_values)
                 session.run(query, nodes=nodes_values)
 
             for query in self.query_generator.generate_query_for_relationship(nodes):

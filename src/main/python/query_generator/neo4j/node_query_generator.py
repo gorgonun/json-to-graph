@@ -23,10 +23,10 @@ class NodeQueryGenerator():
         f"""
             WITH $nodes AS nodes
             UNWIND nodes AS node
-            MERGE (n:{self.scape_label(label)})
+            MERGE (n:{self.scape_label(label)} {{__jtg_id: node.id}})
             ON CREATE\n {row_query}
             """,
-            [node.common_values for node in nodes]
+            [{"id": node.id, **node.common_values} for node in nodes]
         )
     
     def generate_query_for_row(self, node: Node) -> str:
@@ -41,7 +41,11 @@ class NodeQueryGenerator():
     def generate_query_for_relationship(self, nodes: list[Node]) -> str:
         for node in nodes:
             for relation in node.relations:
-                yield f"MERGE (n: {node.table.name} {{id: {node.id}}})-[:{self.scape_label(relation.table.name)}]->({relation.table.name} {{id: {relation.id}}})"
+                yield f"""
+                MATCH (n :{node.table.name} {{__jtg_id: {node.id}}})
+                MATCH (n1 :{relation.table.name} {{__jtg_id: {relation.id}}})
+                MERGE (n)-[:{self.scape_label(relation.table.name)}]->(n1)
+            """
 
     def scape_label(self, label: str) -> str:
         # convert \u0060 to literal backtick and then escape backticks
