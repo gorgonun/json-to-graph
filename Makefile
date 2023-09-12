@@ -10,13 +10,18 @@ mongodb_root_password ?= root
 mongodb_database ?= test
 mongodb_collection ?= nyt
 mongodb_url ?= "mongodb://$(mongodb_root_username):$(mongodb_root_password)@mongodb:27017/$(mongodb_database)?authSource=admin"
+neo4j_user ?= neo4j
+neo4j_password ?= admin
 
 define GLOBAL_ENV
 MONGODB_DATA=./data/mongodb/
 NEO4J_DATA=./data/neo4j/
 MONGODB_URL="mongodb://$(mongodb_root_username):$(mongodb_root_password)@localhost:27017/$(mongodb_database)?authSource=admin"
 MONGODB_COLLECTION=$(mongodb_collection)
+MONGODB_DATABASE=$(mongodb_database)
 NEO4J_URL="bolt://localhost:7687"
+NEO4J_USER=$(neo4j_user)
+NEO4J_PASSWORD=$(neo4j_password)
 endef
 
 define MONGODB_DEFAULT_ENV
@@ -32,7 +37,7 @@ ME_CONFIG_MONGODB_ADMINPASSWORD=root
 endef
 
 define NEO4J_DEFAULT_ENV
-NEO4J_AUTH=neo4j/admin
+NEO4J_AUTH=$(neo4j_user)/$(neo4j_password)
 NEO4J_dbms_security_auth__minimum__password__length=1
 endef
 

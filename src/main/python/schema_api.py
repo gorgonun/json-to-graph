@@ -41,7 +41,7 @@ class SchemaAPI:
         self._schemas[schema.id] = schema
         return schema
     
-    def update_column_information(self, schema_id: str, column_name: str, is_relationship: bool):
+    def update_column_information(self, schema_id: int, column_name: str, is_relationship: bool):
         self._schemas[schema_id].column_information[column_name].is_relationship = is_relationship
 
     def find_schema_by_columns(self, columns: Iterable[str]) -> Schema | None:

@@ -2,7 +2,6 @@ from typing import Any, Iterable
 from main.python.relationship_reference import RelationshipReference
 from main.python.node import Node, PartialNode
 from main.python.schema import Schema
-
 from main.python.schema_api import SchemaAPI
 from main.python.table import Table
 
@@ -33,12 +32,14 @@ class JsonToNode():
 
     def migrate_data(self, json_data: Iterable[dict[str, Any]]):
         result: list[Node] = []
+        result_leaft_nodes: list[Node] = []
 
         for doc in json_data:
-            node = self.migrate_dict(doc, 0)
+            leaft_nodes, node = self.migrate_dict(doc, 0)
             result.append(node)
+            result_leaft_nodes.extend(leaft_nodes)
         
-        return result
+        return result_leaft_nodes, result
         
     def migrate_dict(self, data: dict[str, Any], level: int, parent_field: str | None = None, previous_path: list[str] | None = None):
         node = None
@@ -46,6 +47,7 @@ class JsonToNode():
             "common": {},
             "relationship": {}
         }
+        leaf_nodes = []
 
         if level == 0:
             schema = self.schema_api.update_schema(self.root_table.schema.id, data.keys())
@@ -55,12 +57,15 @@ class JsonToNode():
             schema = self.schema_api.find_schema_by_columns(data.keys())
             table = self.table_mapping.get(parent_field)
 
+            if schema:
+                self.schema_api.update_schema(schema.id, data.keys())
+
             if not schema and not table:
                 schema = self.schema_api.new_schema_from_columns(data.keys())
                 table = self.create_table(parent_field, schema, previous_path)
             
-            elif (schema and not table) or (table and not schema):
-                raise RuntimeError(f"Invalid schema {schema} or table {table}")
+            elif schema and not table:
+                table = self.create_table(parent_field, schema, previous_path)
 
             node = PartialNode(id=self.next_node_increment(), table=table, relations=[])
 
@@ -71,20 +76,25 @@ class JsonToNode():
             if not v:
                 continue
             if isinstance(v, dict):
-                relation = self.migrate_dict(v, level + 1, k)
+                new_leaf_nodes, relation = self.migrate_dict(v, level + 1, k)
                 node.relations.append(relation)
                 values["relationship"][k] = RelationshipReference(relation.table.name, relation.id)
                 self.schema_api.update_column_information(node.table.schema.id, k, True)
+                leaf_nodes.extend([*new_leaf_nodes, relation])
             elif isinstance(v, list):
                 for item in v:
                     if isinstance(item, dict):
-                        relation = self.migrate_dict(item, level + 1, k)
+                        new_leaf_nodes, relation = self.migrate_dict(item, level + 1, k)
                         node.relations.append(relation)
                         values["relationship"][k] = RelationshipReference(relation.table.name, relation.id)
                         self.schema_api.update_column_information(node.table.schema.id, k, True)
+                        leaf_nodes.extend([*new_leaf_nodes, relation])
                     else:
                         values["common"][k] = v
             else:
                 values["common"][k] = v
 
-        return Node(node.id, node.table, values["common"], values["relationship"], node.relations)
+        return (leaf_nodes, Node(id=node.id, table=node.table, common_values=values["common"], relationship_references=values["relationship"], relations=node.relations))
+    
+    def link_table(self, src: Table, dst: Table):
+        src.relations[dst.id] = dst

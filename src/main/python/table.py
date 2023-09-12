@@ -9,5 +9,5 @@ class Table:
     id: int
     name: str
     schema: Schema
-    relations: list[Table]
+    relations: dict[int, Table]
     path: list[str]

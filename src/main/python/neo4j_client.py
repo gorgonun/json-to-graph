@@ -1,23 +1,24 @@
 from neo4j import Driver, GraphDatabase
 
 from main.python.node import Node
-from main.python.query_generator.query_generator import QueryGenerator
+from main.python.query_generator.neo4j.neo4j_query_generator import Neo4jQueryGenerator
 
 
 class Neo4jClient():
-    def __init__(self, driver: Driver | None = None, url: str | None = None, neo4j_user: str | None = None, neo4j_password: str | None = None, query_generator: QueryGenerator = None) -> None:
+    def __init__(self, driver: Driver | None = None, url: str | None = None, neo4j_user: str | None = None, neo4j_password: str | None = None) -> None:
         self.driver = driver
-        self.query_generator = query_generator or QueryGenerator("neo4j")
+        self.query_generator = Neo4jQueryGenerator()
         self.__url = url
         self.__neo4j_user = neo4j_user
         self.__neo4j_password = neo4j_password
 
     def write_nodes(self, nodes: list[Node]):
-        for query in self.query_generator.generate(nodes):
-            print(query)
-        # with self.driver.session() as session:
-        #     for (query, nodes) in self.query_generator.generate(nodes):
-        #         session.run(query, nodes=nodes)
+        with self.driver.session() as session:
+            for (query, nodes_values) in self.query_generator.generate_create_query(nodes):
+                session.run(query, nodes=nodes_values)
+
+            for query in self.query_generator.generate_query_for_relationship(nodes):
+                session.run(query)
 
     def __enter__(self):
         if not self.driver:

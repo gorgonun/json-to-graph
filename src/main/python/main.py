@@ -26,32 +26,32 @@ def main(threshold: float = 0.5):
     schema_api = SchemaAPI(threshold)
     json_to_node = JsonToNode(rootName, schema_api)
 
-    # nodes = json_to_node.migrate_data(collection.find())
-    nodes = json_to_node.migrate_data([
-        {
-            "_id": "1",
-            "name": "John",
-            "age": 20,
-            "address": {
-                "street": "Main Street",
-                "number": 123,
-                "city": "New York"
-            },
-            "phones": [
-                {
-                    "type": "mobile",
-                    "number": "123456789"
-                },
-                {
-                    "type": "home",
-                    "number": "987654321"
-                }
-            ]
-        }
-    ])
+    leaf_nodes, nodes = json_to_node.migrate_data(collection.find())
+    # leaf_nodes, nodes = json_to_node.migrate_data([
+    #     {
+    #         "_id": "1",
+    #         "name": "John",
+    #         "age": 20,
+    #         "address": {
+    #             "street": "Main Street",
+    #             "number": 123,
+    #             "city": "New York"
+    #         },
+    #         "phones": [
+    #             {
+    #                 "type": "mobile",
+    #                 "number": "123456789"
+    #             },
+    #             {
+    #                 "type": "home",
+    #                 "number": "987654321"
+    #             }
+    #         ]
+    #     }
+    # ])
 
     with Neo4jClient.from_url(neo4j_url, neo4j_user, neo4j_password) as neo4j_client:
-        neo4j_client.write_nodes(nodes)
+        neo4j_client.write_nodes([*leaf_nodes, *nodes])
 
 
 if __name__ == '__main__':
