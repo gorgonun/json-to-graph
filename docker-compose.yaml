@@ -1,0 +1,51 @@
+version: '3.8'
+
+networks:
+  neo4j-network:
+    driver: bridge
+
+services:
+  mongodb:
+    image: mongo:6.0.8
+    ports:
+      - '27017:27017'
+    volumes:
+      - ${MONGODB_DATA}:/data/db
+    env_file:
+      - .env.mongodb
+    profiles: ['basic', 'full']
+
+  mongo-seed:
+    image: mongo:6.0.8
+    links:
+      - mongodb
+    volumes:
+      - ./mongo-seed:/mongo-seed
+    command:
+      /mongo-seed/import.sh
+    env_file:
+      - .env.mongo_seed
+    profiles: ['basic', 'full']
+
+  mongo-express:
+    image: mongo-express
+    ports:
+      - 8081:8081
+    env_file:
+      - .env.mongo_express
+    links:
+      - mongodb
+    profiles: ['full']
+
+  neo4j:
+    image: neo4j:5.10.0
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    volumes:
+      - ${NEO4J_DATA}:/data
+    env_file:
+      - .env.neo4j
+    profiles: ['basic', 'full']
+    networks:
+      - neo4j-network
