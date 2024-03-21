@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from main.python.table import Table
+from python.table import Table
 
 
 @dataclass
@@ -12,6 +12,7 @@ class Node():
     common_values: dict[str, Any] = field(default_factory=lambda: {})
     relationship_references: dict[str, Any] = field(default_factory=lambda: {})
     relations: list[Node] = field(default_factory=lambda: [])
+    processing_id: str | None = None
 
     @property
     def values(self):

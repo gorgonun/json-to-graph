@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from main.python.schema import Schema
+from python.schema import Schema
 
 
 @dataclass

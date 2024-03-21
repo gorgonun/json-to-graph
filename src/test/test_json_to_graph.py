@@ -1,8 +1,8 @@
-from main.python.json_to_node import JsonToNode
-from main.python.node import Node
-from main.python.schema import Schema
-from main.python.schema_api import SchemaAPI
-from main.python.table import Table
+from python.json_to_node import JsonToNode
+from python.node import Node
+from python.schema import Schema
+from python.schema_api import SchemaAPI
+from python.table import Table
 
 def test_it_migrates_dict():
     test_dict = [

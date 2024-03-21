@@ -1,7 +1,7 @@
 # from __future__ import annotations
 # from typing import Any
-# from main.python.schema import Schema
-# from main.python.table import Table
+# from python.schema import Schema
+# from python.table import Table
 # import uuid
 
 

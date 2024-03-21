@@ -1,5 +1,5 @@
-# from main.python.item import ItemReference
-# from main.python.table import Table
+# from python.item import ItemReference
+# from python.table import Table
 
 
 # class InsertOperation():

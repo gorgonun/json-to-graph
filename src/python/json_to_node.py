@@ -1,9 +1,9 @@
-from typing import Any, Iterable
-from main.python.relationship_reference import RelationshipReference
-from main.python.node import Node, PartialNode
-from main.python.schema import Schema
-from main.python.schema_api import SchemaAPI
-from main.python.table import Table
+from typing import Any, Callable, Coroutine, Iterable
+from python.relationship_reference import RelationshipReference
+from python.node import Node, PartialNode
+from python.schema import Schema
+from python.schema_api import SchemaAPI
+from python.table import Table
 
 
 class JsonToNode():
@@ -29,39 +29,36 @@ class JsonToNode():
         table = Table(self.next_table_increment(), name, schema, [], path or [])
         self.table_mapping[name] = table
         return table
+    
+    async def on_subnode_default(self, node: PartialNode, src_column: str, level: int, sub_node: dict[str, Any]):
+        relation = self.migrate_dict(sub_node, level + 1, src_column, self.on_subnode_default)
+        node.relations.append(relation)
+        return RelationshipReference(relation.table.name, relation.id)
 
-    def migrate_data(self, json_data: Iterable[dict[str, Any]]):
-        result: list[Node] = []
-        result_leaft_nodes: list[Node] = []
-
-        for doc in json_data:
-            leaft_nodes, node = self.migrate_dict(doc, 0)
-            result.append(node)
-            result_leaft_nodes.extend(leaft_nodes)
+    async def migrate_data(self, json_data: dict[str, Any], on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], RelationshipReference] | None = None):
+        return await self.migrate_dict(json_data, 0, on_subnode=on_subnode or self.on_subnode_default)
         
-        return result_leaft_nodes, result
-        
-    def migrate_dict(self, data: dict[str, Any], level: int, parent_field: str | None = None, previous_path: list[str] | None = None):
+    async def migrate_dict(self, data: dict[str, Any], level: int, on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], Coroutine[Any, Any, RelationshipReference]], parent_field: str | None = None, previous_path: list[str] | None = None):
         node = None
         values = {
             "common": {},
-            "relationship": {}
+            "relationship": {},
+            "processing_id": None
         }
-        leaf_nodes = []
 
         if level == 0:
-            schema = self.schema_api.update_schema(self.root_table.schema.id, data.keys())
+            schema = self.schema_api.update_schema(self.root_table.schema.id, filter(lambda k: k != "processing_id", data.keys()))
             node = PartialNode(id=self.next_node_increment(), table=self.root_table, relations=[])
         
         elif level > 0 and parent_field:
-            schema = self.schema_api.find_schema_by_columns(data.keys())
+            schema = self.schema_api.find_schema_by_columns(filter(lambda k: k != "processing_id", data.keys()))
             table = self.table_mapping.get(parent_field)
 
             if schema:
-                self.schema_api.update_schema(schema.id, data.keys())
+                self.schema_api.update_schema(schema.id, filter(lambda k: k != "processing_id", data.keys()))
 
             if not schema and not table:
-                schema = self.schema_api.new_schema_from_columns(data.keys())
+                schema = self.schema_api.new_schema_from_columns(filter(lambda k: k != "processing_id", data.keys()))
                 table = self.create_table(parent_field, schema, previous_path)
             
             elif schema and not table:
@@ -75,26 +72,25 @@ class JsonToNode():
         for (k, v) in data.items():
             if not v:
                 continue
+            if k == "processing_id":
+                values["processing_id"] = str(v)
+                continue
             if isinstance(v, dict):
-                new_leaf_nodes, relation = self.migrate_dict(v, level + 1, k)
-                node.relations.append(relation)
-                values["relationship"][k] = RelationshipReference(relation.table.name, relation.id)
+                reference = await on_subnode(node, k, level, v)
+                values["relationship"][k] = reference
                 self.schema_api.update_column_information(node.table.schema.id, k, True)
-                leaf_nodes.extend([*new_leaf_nodes, relation])
             elif isinstance(v, list):
                 for item in v:
                     if isinstance(item, dict):
-                        new_leaf_nodes, relation = self.migrate_dict(item, level + 1, k)
-                        node.relations.append(relation)
-                        values["relationship"][k] = RelationshipReference(relation.table.name, relation.id)
+                        reference = await on_subnode(node, k, level, item)
+                        values["relationship"][k] = reference
                         self.schema_api.update_column_information(node.table.schema.id, k, True)
-                        leaf_nodes.extend([*new_leaf_nodes, relation])
                     else:
                         values["common"][k] = v
             else:
                 values["common"][k] = v
 
-        return (leaf_nodes, Node(id=node.id, table=node.table, common_values=values["common"], relationship_references=values["relationship"], relations=node.relations))
+        return Node(id=node.id, table=node.table, common_values=values["common"], relationship_references=values["relationship"], relations=node.relations, processing_id=values["processing_id"])
     
     def link_table(self, src: Table, dst: Table):
         src.relations[dst.id] = dst

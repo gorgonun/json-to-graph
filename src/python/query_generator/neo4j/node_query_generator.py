@@ -1,5 +1,6 @@
 from typing import Any
-from main.python.node import Node
+from python.neo4j_relationship_data import Neo4JRelationshipData
+from python.node import Node
 
 
 class NodeQueryGenerator():
@@ -38,14 +39,21 @@ class NodeQueryGenerator():
         
         return "SET " + ",\n".join([*result])
 
-    def generate_query_for_relationship(self, nodes: list[Node]) -> str:
-        for node in nodes:
-            for relation in node.relations:
-                yield f"""
-                MATCH (n :{node.table.name} {{__jtg_id: {node.id}}})
-                MATCH (n1 :{relation.table.name} {{__jtg_id: {relation.id}}})
-                MERGE (n)-[:{self.scape_label(relation.table.name)}]->(n1)
-            """
+    # def generate_query_for_relationship(self, nodes: list[Node]) -> str:
+    #     for node in nodes:
+    #         for relation in node.relations:
+    #             yield f"""
+    #             MATCH (n :{node.table.name} {{__jtg_id: {node.id}}})
+    #             MATCH (n1 :{relation.table.name} {{__jtg_id: {relation.id}}})
+    #             MERGE (n)-[:{self.scape_label(relation.table.name)}]->(n1)
+    #         """
+
+    def generate_query_for_relationship(self, relationship_data: Neo4JRelationshipData) -> str:
+        return f"""
+            MATCH (n :{relationship_data.origin_label} {{__jtg_id: {relationship_data.origin_id}}})
+            MATCH (n1 :{relationship_data.destination_label} {{__jtg_id: {relationship_data.destination_id}}})
+            MERGE (n)-[:{self.scape_label(relationship_data.relationship_name)}]->(n1)
+        """
 
     def scape_label(self, label: str) -> str:
         # convert \u0060 to literal backtick and then escape backticks

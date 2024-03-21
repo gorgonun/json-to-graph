@@ -1,5 +1,5 @@
 from typing import Iterable, Set, Tuple
-from main.python.schema import Column, Schema
+from python.schema import Column, Schema
 
 
 class SchemaAPI:
