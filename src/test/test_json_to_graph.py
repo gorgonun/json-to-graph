@@ -1,8 +1,8 @@
-from python.json_to_node import JsonToNode
-from python.node import Node
-from python.schema import Schema
-from python.schema_api import SchemaAPI
-from python.table import Table
+from json2graph.json_to_node import JsonToNode
+from json2graph.node import Node
+from json2graph.schema import Schema
+from json2graph.schema_api import SchemaAPI
+from json2graph.table import Table
 
 def test_it_migrates_dict():
     test_dict = [

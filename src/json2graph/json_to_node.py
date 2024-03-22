@@ -1,9 +1,10 @@
 from typing import Any, Callable, Coroutine, Iterable
-from python.relationship_reference import RelationshipReference
-from python.node import Node, PartialNode
-from python.schema import Schema
-from python.schema_api import SchemaAPI
-from python.table import Table
+from json2graph.node_feedback import NodeFeedback
+from json2graph.relationship_reference import RelationshipReference
+from json2graph.node import Node, PartialNode
+from json2graph.schema import Schema
+from json2graph.schema_api import SchemaAPI
+from json2graph.table import Table
 
 
 class JsonToNode():
@@ -35,30 +36,32 @@ class JsonToNode():
         node.relations.append(relation)
         return RelationshipReference(relation.table.name, relation.id)
 
-    async def migrate_data(self, json_data: dict[str, Any], on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], RelationshipReference] | None = None):
+    async def migrate_data(self, json_data: dict[str, Any] | NodeFeedback, on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], RelationshipReference] | None = None):
+        if isinstance(json_data, NodeFeedback):
+            return await self.migrate_dict(json_data.data, json_data.level, on_subnode or self.on_subnode_default, parent_field=json_data.parent_field, processing_id=str(json_data.processing_id))
         return await self.migrate_dict(json_data, 0, on_subnode=on_subnode or self.on_subnode_default)
         
-    async def migrate_dict(self, data: dict[str, Any], level: int, on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], Coroutine[Any, Any, RelationshipReference]], parent_field: str | None = None, previous_path: list[str] | None = None):
+    async def migrate_dict(self, data: dict[str, Any], level: int, on_subnode: Callable[[PartialNode, str, int, dict[str, Any]], Coroutine[Any, Any, RelationshipReference]], parent_field: str | None = None, previous_path: list[str] | None = None, processing_id: str | None = None):
         node = None
         values = {
             "common": {},
             "relationship": {},
-            "processing_id": None
+            "processing_id": processing_id
         }
 
         if level == 0:
-            schema = self.schema_api.update_schema(self.root_table.schema.id, filter(lambda k: k != "processing_id", data.keys()))
+            schema = self.schema_api.update_schema(self.root_table.schema.id, data.keys())
             node = PartialNode(id=self.next_node_increment(), table=self.root_table, relations=[])
         
         elif level > 0 and parent_field:
-            schema = self.schema_api.find_schema_by_columns(filter(lambda k: k != "processing_id", data.keys()))
+            schema = self.schema_api.find_schema_by_columns(data.keys())
             table = self.table_mapping.get(parent_field)
 
             if schema:
-                self.schema_api.update_schema(schema.id, filter(lambda k: k != "processing_id", data.keys()))
+                self.schema_api.update_schema(schema.id, data.keys())
 
             if not schema and not table:
-                schema = self.schema_api.new_schema_from_columns(filter(lambda k: k != "processing_id", data.keys()))
+                schema = self.schema_api.new_schema_from_columns(data.keys())
                 table = self.create_table(parent_field, schema, previous_path)
             
             elif schema and not table:
@@ -71,9 +74,6 @@ class JsonToNode():
             
         for (k, v) in data.items():
             if not v:
-                continue
-            if k == "processing_id":
-                values["processing_id"] = str(v)
                 continue
             if isinstance(v, dict):
                 reference = await on_subnode(node, k, level, v)

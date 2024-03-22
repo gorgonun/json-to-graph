@@ -1,5 +1,5 @@
 from typing import Iterable, Set, Tuple
-from python.schema import Column, Schema
+from json2graph.schema import Column, Schema
 
 
 class SchemaAPI:

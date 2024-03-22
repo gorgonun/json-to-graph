@@ -4,12 +4,18 @@ SHELL := /bin/bash
 
 # basic or full
 profile ?= basic
+
+# delete saved configurations and start from scratch
 clean ?= false
+
+# mongodb
 mongodb_root_username ?= root
 mongodb_root_password ?= root
 mongodb_database ?= test
 mongodb_collection ?= nyt
 mongodb_url ?= "mongodb://$(mongodb_root_username):$(mongodb_root_password)@mongodb:27017/$(mongodb_database)?authSource=admin"
+
+# neo4j
 neo4j_user ?= neo4j
 neo4j_password ?= admin
 
@@ -68,4 +74,4 @@ stop_infra: setup_env_file
 	docker-compose --profile $(profile) down
 
 run: setup_env_file
-	./sbt run
+	cd src/ && poetry run python -m python.main

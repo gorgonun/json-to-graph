@@ -1,8 +1,8 @@
 from neo4j import Driver, GraphDatabase
 
-from python.neo4j_relationship_data import Neo4JRelationshipData
-from python.node import Node
-from python.query_generator.neo4j.neo4j_query_generator import Neo4jQueryGenerator
+from json2graph.neo4j_relationship_data import Neo4JRelationshipData
+from json2graph.node import Node
+from json2graph.query_generator.neo4j.neo4j_query_generator import Neo4jQueryGenerator
 
 
 class Neo4jClient():
@@ -21,6 +21,7 @@ class Neo4jClient():
     def create_relationship(self, relationship_data: Neo4JRelationshipData):
         with self.driver.session() as session:
             query = self.query_generator.generate_query_for_relationship(relationship_data)
+            print(query)
             session.run(query)
 
     def write_nodes(self, nodes: list[Node]):

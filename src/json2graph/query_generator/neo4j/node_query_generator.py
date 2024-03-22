@@ -1,6 +1,6 @@
 from typing import Any
-from python.neo4j_relationship_data import Neo4JRelationshipData
-from python.node import Node
+from json2graph.neo4j_relationship_data import Neo4JRelationshipData
+from json2graph.node import Node
 
 
 class NodeQueryGenerator():

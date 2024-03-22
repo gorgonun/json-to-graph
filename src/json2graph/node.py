@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from python.table import Table
+from json2graph.table import Table
 
 
 @dataclass

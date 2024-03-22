@@ -4,19 +4,18 @@ from typing import Any
 import uuid
 from pymongo import MongoClient
 from dotenv import load_dotenv
-from python.async_relationship_reference import AsyncRelationshipReference
-from python.events.neo4j_node_created import Neo4JNodeCreated
-from python.json_to_node import JsonToNode
-from python.neo4j_client import Neo4jClient
-from python.neo4j_relationship_data import Neo4JRelationshipData
-from python.node import Node, PartialNode
+from json2graph.async_relationship_reference import AsyncRelationshipReference
+from json2graph.events.neo4j_node_created import Neo4JNodeCreated
+from json2graph.json_to_node import JsonToNode
+from json2graph.neo4j_client import Neo4jClient
+from json2graph.neo4j_relationship_data import Neo4JRelationshipData
+from json2graph.node import Node, PartialNode
 from ebf.decorators.job import job
 from ebf import turbo
-from python.schema_api import SchemaAPI
+from json2graph.node_feedback import NodeFeedback
+from json2graph.schema_api import SchemaAPI
 import logging
 from ebf.event_based_boolean_scheduler.event_based_boolean_scheduler import EventBasedBooleanScheduler
-
-from python.subnode_processing_request import SubNodeProcessingRequest
 from ebf.jobs.dynamic_job.dynamic_job_helper_api import DynamicJobHelperApi
 from ebf.interfaces.queue_api import QueueApi
 from ebf.event_based_boolean_scheduler.decorators.event_job import event_job
@@ -42,7 +41,7 @@ def handler(origin_id, origin_label, destination_processing_id, relationship_nam
                 origin_id=origin_id,
                 origin_label=origin_label,
                 destination_id=destination_event.id,
-                destination_label=content.label,
+                destination_label=destination_event.label,
                 relationship_name=relationship_name
             )
         
@@ -67,12 +66,12 @@ async def on_subnode(client: JsonToNode, api: DynamicJobHelperApi, feedback_queu
         await api.central_api.execute(RegisterHandlerCommand(relationship_handler))
 
         node.relations.append(reference)
-        await feedback_queue.put({**sub_node, "processing_id": reference})
+        await feedback_queue.put(NodeFeedback(data=sub_node, processing_id=reference, level=level + 1, parent_field=src_column))
         return reference
     return with_client_and_queue
 
 
-@job(single_run=True, output_queues_references=["mongodb_producer_output"], environ={"mongodb_url": os.environ["MONGODB_URL"], "mongodb_database": os.environ["MONGODB_DATABASE"], "mongodb_collection": os.environ["MONGODB_COLLECTION"]})
+@job(single_run=True, output_queues_references=["mongodb_producer_output"], environ={"mongodb_url": os.environ["MONGODB_URL"], "mongodb_database": os.environ["MONGODB_DATABASE"], "mongodb_collection": os.environ["MONGODB_COLLECTION"]}, iterable_chunk_size=100)
 def mongodb_producer(environ: dict):
     mongodb_url = environ["mongodb_url"]
     mongodb_database = environ["mongodb_database"]
@@ -88,7 +87,7 @@ def mongodb_producer(environ: dict):
         yield data
 
 @job(input_queue_reference="mongodb_producer_output", output_queues_references=["json_to_node_output"], client=JsonToNode(os.environ["MONGODB_COLLECTION"], SchemaAPI(0.5)))
-async def json_to_node(content: dict[str, Any], client: JsonToNode, api: DynamicJobHelperApi):
+async def json_to_node(content: dict[str, Any] | NodeFeedback, client: JsonToNode, api: DynamicJobHelperApi):
     nodes = await client.migrate_data(content, on_subnode=await on_subnode(client, api, api.queues["mongodb_producer_output"]))
     return nodes
 
@@ -101,7 +100,7 @@ async def node_to_neo4j(content: Node, internal_state, neo4j: Neo4jClient):
     return result
 
 
-@job(input_queue_reference="neo4j_create_relationship_queue", internal_state={"write_count": 0}, clients_with_context={"neo4j": Neo4jClient.from_url(os.environ["NEO4J_URL"], os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"])})
+@job(input_queue_reference="neo4j_create_relationship_queue", internal_state={"write_count": 0}, clients_with_context={"neo4j": Neo4jClient.from_url(os.environ["NEO4J_URL"], os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"])}, replicas=2)
 async def neo4j_create_relationship(content: Neo4JRelationshipData, internal_state, neo4j: Neo4jClient, api: DynamicJobHelperApi):
     neo4j.create_relationship(content)
     internal_state["write_count"] = internal_state["write_count"] + 1

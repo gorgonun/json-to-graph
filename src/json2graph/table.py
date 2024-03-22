@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from python.schema import Schema
+from json2graph.schema import Schema
 
 
 @dataclass
