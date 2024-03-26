@@ -1,14 +1,14 @@
-from typing import Any, Callable, Coroutine, Iterable
+from typing import Any, Callable, Coroutine
 from json2graph.node_feedback import NodeFeedback
 from json2graph.relationship_reference import RelationshipReference
 from json2graph.node import Node, PartialNode
 from json2graph.schema import Schema
-from json2graph.schema_api import SchemaAPI
 from json2graph.table import Table
+from json2graph.turbo.extra_apis.resources.remote_schema_api_api import RemoteSchemaApiApi
 
 
 class JsonToNode():
-    def __init__(self, root_name: str, schema_api: SchemaAPI) -> None:
+    def __init__(self, root_name: str, schema_api: RemoteSchemaApiApi, meta: dict[str, Any]) -> None:
         self.root_name = root_name
         self.schema_api = schema_api
         self.table_mapping: dict[str, Table] = {}
@@ -16,7 +16,10 @@ class JsonToNode():
             "table": 0,
             "node": 0
         }
-        self.root_table = self.create_table(root_name, schema_api.new_incomplete_schema())
+        self.root_table = None
+
+    async def create_root_table(self):
+        return self.create_table(self.root_name, await self.schema_api.new_incomplete_schema())
 
     def next_table_increment(self):
         self.incremental_ids["table"] = self.incremental_ids["table"] + 1
@@ -32,7 +35,7 @@ class JsonToNode():
         return table
     
     async def on_subnode_default(self, node: PartialNode, src_column: str, level: int, sub_node: dict[str, Any]):
-        relation = self.migrate_dict(sub_node, level + 1, src_column, self.on_subnode_default)
+        relation = await self.migrate_dict(sub_node, level + 1, src_column, self.on_subnode_default)
         node.relations.append(relation)
         return RelationshipReference(relation.table.name, relation.id)
 
@@ -50,18 +53,22 @@ class JsonToNode():
         }
 
         if level == 0:
-            schema = self.schema_api.update_schema(self.root_table.schema.id, data.keys())
+            if not self.root_table:
+                self.root_table = await self.create_root_table()
+
+            schema = await self.schema_api.update_schema(self.root_table.schema.id, data.keys())
+            self.root_table.schema = schema
             node = PartialNode(id=self.next_node_increment(), table=self.root_table, relations=[])
         
         elif level > 0 and parent_field:
-            schema = self.schema_api.find_schema_by_columns(data.keys())
+            schema = await self.schema_api.find_schema_by_columns(data.keys())
             table = self.table_mapping.get(parent_field)
 
             if schema:
-                self.schema_api.update_schema(schema.id, data.keys())
+                await self.schema_api.update_schema(schema.id, data.keys())
 
             if not schema and not table:
-                schema = self.schema_api.new_schema_from_columns(data.keys())
+                schema = await self.schema_api.new_schema_from_columns(data.keys())
                 table = self.create_table(parent_field, schema, previous_path)
             
             elif schema and not table:
@@ -78,19 +85,16 @@ class JsonToNode():
             if isinstance(v, dict):
                 reference = await on_subnode(node, k, level, v)
                 values["relationship"][k] = reference
-                self.schema_api.update_column_information(node.table.schema.id, k, True)
+                await self.schema_api.update_column_information(node.table.schema.id, k, True)
             elif isinstance(v, list):
                 for item in v:
                     if isinstance(item, dict):
                         reference = await on_subnode(node, k, level, item)
                         values["relationship"][k] = reference
-                        self.schema_api.update_column_information(node.table.schema.id, k, True)
+                        await self.schema_api.update_column_information(node.table.schema.id, k, True)
                     else:
                         values["common"][k] = v
             else:
                 values["common"][k] = v
 
         return Node(id=node.id, table=node.table, common_values=values["common"], relationship_references=values["relationship"], relations=node.relations, processing_id=values["processing_id"])
-    
-    def link_table(self, src: Table, dst: Table):
-        src.relations[dst.id] = dst

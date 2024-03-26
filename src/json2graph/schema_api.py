@@ -1,9 +1,9 @@
-from typing import Iterable, Set, Tuple
+from typing import Any, Iterable, Tuple
 from json2graph.schema import Column, Schema
 
 
 class SchemaAPI:
-    def __init__(self, max_difference_between_schemas: float) -> None:
+    def __init__(self, max_difference_between_schemas: int, meta: dict[str, Any]) -> None:
         self._schemas: dict[int, Schema] = {}
         self.max_difference_between_schemas = max_difference_between_schemas
         self.last_id = 0
