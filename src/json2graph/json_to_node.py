@@ -1,4 +1,5 @@
 from typing import Any, Callable, Coroutine
+from json2graph.id_manager_api import IdManagerApi
 from json2graph.node_feedback import NodeFeedback
 from json2graph.relationship_reference import RelationshipReference
 from json2graph.node import Node, PartialNode
@@ -8,29 +9,32 @@ from json2graph.turbo.extra_apis.resources.remote_schema_api_api import RemoteSc
 
 
 class JsonToNode():
-    def __init__(self, root_name: str, schema_api: RemoteSchemaApiApi, meta: dict[str, Any]) -> None:
+    def __init__(self, root_name: str, schema_api: RemoteSchemaApiApi, id_manager: IdManagerApi) -> None:
         self.root_name = root_name
         self.schema_api = schema_api
         self.table_mapping: dict[str, Table] = {}
-        self.incremental_ids: dict[str, int] = {
-            "table": 0,
-            "node": 0
-        }
+        self.id_manager = id_manager
         self.root_table = None
 
     async def create_root_table(self):
-        return self.create_table(self.root_name, await self.schema_api.new_incomplete_schema())
+        return await self.create_table(self.root_name, await self.schema_api.new_incomplete_schema())
 
-    def next_table_increment(self):
-        self.incremental_ids["table"] = self.incremental_ids["table"] + 1
-        return self.incremental_ids["table"]
+    async def next_table_increment(self):
+        result = await self.id_manager.get_id_increment(f"{self.root_name}_table", create=True)
+        if not result:
+            raise RuntimeError("Table increment could not be created")
+        
+        return result
     
-    def next_node_increment(self):
-        self.incremental_ids["node"] = self.incremental_ids["node"] + 1
-        return self.incremental_ids["node"]
+    async def next_node_increment(self):
+        result = await self.id_manager.get_id_increment(f"{self.root_name}_node", create=True)
+        if not result:
+            raise RuntimeError("Node increment could not be created")
+        
+        return result
 
-    def create_table(self, name: str, schema: Schema, path: list[str] | None = None):
-        table = Table(self.next_table_increment(), name, schema, [], path or [])
+    async def create_table(self, name: str, schema: Schema, path: list[str] | None = None):
+        table = Table(await self.next_table_increment(), name, schema, [], path or [])
         self.table_mapping[name] = table
         return table
     
@@ -58,7 +62,7 @@ class JsonToNode():
 
             schema = await self.schema_api.update_schema(self.root_table.schema.id, data.keys())
             self.root_table.schema = schema
-            node = PartialNode(id=self.next_node_increment(), table=self.root_table, relations=[])
+            node = PartialNode(id=await self.next_node_increment(), table=self.root_table, relations=[])
         
         elif level > 0 and parent_field:
             schema = await self.schema_api.find_schema_by_columns(data.keys())
@@ -69,12 +73,12 @@ class JsonToNode():
 
             if not schema and not table:
                 schema = await self.schema_api.new_schema_from_columns(data.keys())
-                table = self.create_table(parent_field, schema, previous_path)
+                table = await self.create_table(parent_field, schema, previous_path)
             
             elif schema and not table:
-                table = self.create_table(parent_field, schema, previous_path)
+                table = await self.create_table(parent_field, schema, previous_path)
 
-            node = PartialNode(id=self.next_node_increment(), table=table, relations=[])
+            node = PartialNode(id=await self.next_node_increment(), table=table, relations=[])
 
         else:
             raise RuntimeError(f"Invalid level {level} or parent {parent_field}")

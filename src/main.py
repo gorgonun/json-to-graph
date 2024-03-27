@@ -6,6 +6,8 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from json2graph.async_relationship_reference import AsyncRelationshipReference
 from json2graph.events.neo4j_node_created import Neo4JNodeCreated
+from json2graph.id_manager import IdManager
+from json2graph.id_manager_api import IdManagerApi
 from json2graph.json_to_node import JsonToNode
 from json2graph.neo4j_client import Neo4jClient
 from json2graph.neo4j_relationship_data import Neo4JRelationshipData
@@ -36,14 +38,12 @@ from ebf.event_based_boolean_scheduler.domain.handler_after_execution_property_e
 from ebf.decorators.actor import actor, ActorDefinition
 
 from json2graph.schema_api import SchemaAPI
-from json2graph.turbo.extra_apis.resources.remote_json_to_node_api import (
-    RemoteJsonToNodeApi,
-)
 from json2graph.turbo.extra_apis.resources.json_to_graph_enum import JsonToGraphEnum
 from json2graph.turbo.extra_apis.resources.remote_schema_api_api import (
     RemoteSchemaApiApi,
 )
 from ebf.interfaces.central_api import CentralApi
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -66,16 +66,9 @@ async def create_schema_api(_central_api: CentralApi):
     )
 
 
-@actor(
-    name="json_to_node",
-    api=RemoteJsonToNodeApi,
-    api_identifier=JsonToGraphEnum.API_ID.value,
-    create_resource=False,
-)
-async def json_to_node_actor(_central_api: CentralApi):
-    return ActorDefinition(
-        actor_class=JsonToNode,
-    )
+@actor(name="id_manager", api=IdManagerApi, api_identifier=JsonToGraphEnum.API_ID.value)
+async def create_id_manager(_central_api: CentralApi):
+    return ActorDefinition(actor_class=IdManager)
 
 
 def handler(origin_id, origin_label, destination_processing_id, relationship_name):
@@ -144,7 +137,6 @@ async def on_subnode(
         "mongodb_database": os.environ["MONGODB_DATABASE"],
         "mongodb_collection": os.environ["MONGODB_COLLECTION"],
     },
-    iterable_chunk_size=100,
 )
 def mongodb_producer(environ: dict):
     mongodb_url = environ["mongodb_url"]
@@ -161,8 +153,9 @@ def mongodb_producer(environ: dict):
         yield data
 
 
+# Exclusive queue for feedback to decreate the size of handlers
 @job(
-    input_queue_reference="mongodb_producer_output",
+    extra_queues_references=["mongodb_producer_output", "json_to_node_feedback"],
     output_queues_references=["json_to_node_output"],
     environ={"mongodb_collection": os.environ["MONGODB_COLLECTION"]},
 )
@@ -171,7 +164,7 @@ async def json_to_node(
     content: dict[str, Any] | NodeFeedback,
     environ: dict[str, str],
     api: DynamicJobHelperApi,
-    on_first_run,
+    on_first_run
 ):
     @on_first_run()
     async def __on_first_run(
@@ -181,48 +174,36 @@ async def json_to_node(
         api: DynamicJobHelperApi,
         on_first_run,
     ):
-        actor_creation_result = await json_to_node_actor(api.central_api)
-        created_client = await api.central_api.execute(
-            actor_creation_result.resource_manager.get(environ["mongodb_collection"])
+        schema_api = await api.central_api.execute(
+            (await create_schema_api(api.central_api)).resource_manager.get(
+                "default"
+            )
         )
 
-        if not created_client:
-            schema_api = await api.central_api.execute(
-                (await create_schema_api(api.central_api)).resource_manager.get(
-                    "default"
-                )
-            )
-            created_client = await api.central_api.execute(
-                actor_creation_result.resource_manager.create(
-                    resource_id=environ["mongodb_collection"],
-                    definition=ActorDefinition(
-                        actor_class=JsonToNode,
-                        kwargs={
-                            "root_name": environ["mongodb_collection"],
-                            "schema_api": schema_api,
-                        },
-                    ),
-                )
-            )
+        if not schema_api:
+            raise RuntimeError("Schema API not found")
 
-        elif len(created_client) > 1:
-            raise Exception("More than one client found")
+        id_manager = await api.central_api.execute(
+            (await create_id_manager(api.central_api)).resource_manager.get("default")
+        )
 
-        fself["client"] = created_client
+        if not id_manager:
+            raise RuntimeError("Id Manager not found")
+
+        fself["client"] = JsonToNode(environ["mongodb_collection"], schema_api, id_manager)
 
     await __on_first_run
 
     client: JsonToNode = fself["client"]
     nodes = await client.migrate_data(
         content,
-        on_subnode=await on_subnode(client, api, api.queues["mongodb_producer_output"]),
+        on_subnode=await on_subnode(client, api, api.queues["json_to_node_feedback"]),
     )
     return nodes
 
 
 @event_job(event_based_boolean_scheduler)(
     input_queue_reference="json_to_node_output",
-    internal_state={"write_count": 0},
     clients_with_context={
         "neo4j": Neo4jClient.from_url(
             os.environ["NEO4J_URL"],
@@ -231,20 +212,35 @@ async def json_to_node(
         )
     },
     meta={"dispatches": [Neo4JNodeCreated]},
+    replicas=3
 )
-async def node_to_neo4j(content: Node, internal_state, neo4j: Neo4jClient):
+async def node_to_neo4j(fself, content: Node, neo4j: Neo4jClient, on_first_run, api: DynamicJobHelperApi,):
+    @on_first_run()
+    async def __on_first_run(
+        fself,
+        content: Neo4JRelationshipData,
+        neo4j: Neo4jClient,
+        api: DynamicJobHelperApi,
+        on_first_run,
+    ):
+        id_manager = await api.central_api.execute(
+            (await create_id_manager(api.central_api)).resource_manager.get("default")
+        )
+
+        fself["id_manager"] = id_manager
+
+    await __on_first_run
+
     neo4j.write_node(content)
-    internal_state["write_count"] = internal_state["write_count"] + 1
     result = Neo4JNodeCreated(
         id=content.id, label=content.table.name, processing_id=content.processing_id
     )
-    print("wrote", internal_state["write_count"])
+    print("wrote", await fself["id_manager"].get_id_increment("node_to_neo4j", create=True))
     return result
 
 
 @job(
     input_queue_reference="neo4j_create_relationship_queue",
-    internal_state={"write_count": 0},
     clients_with_context={
         "neo4j": Neo4jClient.from_url(
             os.environ["NEO4J_URL"],
@@ -255,16 +251,32 @@ async def node_to_neo4j(content: Node, internal_state, neo4j: Neo4jClient):
     replicas=2,
 )
 async def neo4j_create_relationship(
+    fself,
     content: Neo4JRelationshipData,
-    internal_state,
     neo4j: Neo4jClient,
     api: DynamicJobHelperApi,
+    on_first_run,
 ):
+    @on_first_run()
+    async def __on_first_run(
+        fself,
+        content: Neo4JRelationshipData,
+        neo4j: Neo4jClient,
+        api: DynamicJobHelperApi,
+        on_first_run,
+    ):
+        id_manager = await api.central_api.execute(
+            (await create_id_manager(api.central_api)).resource_manager.get("default")
+        )
+
+        fself["id_manager"] = id_manager
+
+    await __on_first_run
+
     neo4j.create_relationship(content)
-    internal_state["write_count"] = internal_state["write_count"] + 1
     print(
         "wrote relationships",
-        internal_state["write_count"],
+        await fself["id_manager"].get_id_increment("neo4j_create_relationship", create=True),
         "from",
         content.origin_id,
         "to",
